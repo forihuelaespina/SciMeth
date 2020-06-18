@@ -1,5 +1,7 @@
 # SciMeth
 
+WORK IN PROGRESS.
+
 SciMeth is a library for biomedical signal and imaging analysis in Python
 that leverages on the scientific method and the concepts from experiment
 design and analysis.

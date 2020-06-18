@@ -94,7 +94,8 @@ This module implements the class :class:`smTimelineEvent <scimeth.data.smTimelin
 |             |        |   :meth:`associateEvents`.                           |
 |             |        |   For an interesting discussion on why not           |
 |             |        |   assign/deassign, see:                              |
-|             |        |   https://english.stackexchange.com/questions/59463/antonym-to-assign|
+|             |        |   https://english.stackexchange.com/questions/59463/ |
+|             |        |   antonym-to-assign                                  |
 +-------------+--------+------------------------------------------------------+
 
 
@@ -1910,7 +1911,8 @@ class smTimeline(smIdentifiable):
 		
 		:Example:
 		
-		.. codeblock::
+		.. code-block::
+		
 			>>> theTimeline.conditions = conditionsSet
 		
 		
@@ -1919,7 +1921,7 @@ class smTimeline(smIdentifiable):
 		:param conditionsIDSet: The list of conditions' id of the conditions
 			to be modified. If any of id does not correspond to an existing
 			condition, the id and its companion condition in 
-			:param:`newConditions` will be ignored
+			`newConditions` will be ignored
 		:type conditionsIDSet: list of int.
 			The order is important as conditions will be paired to those
 			in newConditions in the same order as declared.
@@ -1928,9 +1930,9 @@ class smTimeline(smIdentifiable):
 			existing ones.
 		:type newConditions: list of :class:`smTimelineConditions <scimeth.data.smTimelineCondition>`
 			For updating only one condition, a single 
-			:class:`smTimelineCondition <scimeth.data.smTimelineCondition>`
-			 can also be provided.
-			The length of :param:`conditionsIDSet` and :param:`newConditions`
+			:class:`smTimelineCondition <scimeth.data.smTimelineCondition>` 
+			can also be provided.
+			The length of `conditionsIDSet` and `newConditions`
 			must be the same.
 		
 		:return: None
@@ -2024,7 +2026,7 @@ class smTimeline(smIdentifiable):
 		:param eventsIDSet: The list of events' id of the events
 			to be modified. If any of id does not correspond to an existing
 			event, the id and its companion event in 
-			:param:`newEvents` will be ignored
+			`newEvents` will be ignored
 		:type eventsIDSet: list of int.
 			The order is important as events will be paired to those
 			in newEvents in the same order as declared.
@@ -2034,8 +2036,8 @@ class smTimeline(smIdentifiable):
 		:type newEvents: list of :class:`smTimelineEvents <scimeth.data.smTimelineEvent>`
 			For updating only one event, a single 
 			:class:`smTimelineEvent <scimeth.data.smTimelineEvent>`
-			 can also be provided.
-			The length of :param:`eventsIDSet` and :param:`newEvents`
+			can also be provided.
+			The length of `eventsIDSet` and `newEvents`
 			must be the same.
 		
 		:return: None
