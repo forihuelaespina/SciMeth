@@ -1,0 +1,29 @@
+##
+##
+## Log:
+##
+## 18-Jun-2020 (v0.1): Log of this file started.
+## 		Added the initial patterns:
+##
+##
+
+build/**
+src/scimeth/__pycache__/**
+src/scimeth/data/__pycache__/**
+src/scimeth/gui/__pycache__/**
+src/scimeth/utils/__pycache__/**
+src/tests/__pycache__/**
+wonbat/**
+EclipseModelling/**
+GUIModelling/**
+
+
+## Ignore the documentation build. Save only the documentation sources
+docs/autogen-generated/**
+docs/build/**
+docs/source.bak/**
+docs/mySphinxMake.bat
+docs/mySphinxMake_Cholula.bat
+docs/mySphinxMake_Laptop.bat
+docs/SphinxMake.bat
+

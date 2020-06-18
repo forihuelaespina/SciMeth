@@ -1,0 +1,802 @@
+# -*- coding: utf-8 -*-
+#
+#File: smTimeline.py
+#
+"""
+Created on Tue Mar 24 23:42:31 2020
+
+Class ***smTimeline***
+
+:class:`smTimeline <scimeth.data.smTimeline>` keeps track of experimental and
+non-experimental :class:`smTimelineEvents <scimeth.data.smTimelineEvent>` and
+:class:`smTimelineConditions <scimeth.data.smTimelineCondition>`.
+
+:class:`smTimelineEvents <scimeth.data.smTimelineEvent>` can be group into
+:class:`smTimelineConditions <scimeth.data.smTimelineCondition>` in a
+many-to-many relation.
+A :class:`smTimelineEvents <scimeth.data.smTimelineEvent>` may be associated
+to many
+:class:`smTimelineConditions <scimeth.data.smTimelineCondition>` s, and a
+:class:`smTimelineConditions <scimeth.data.smTimelineCondition>` can
+hold any number of :class:`smTimelineEvents <scimeth.data.smTimelineEvent>`.
+:class:`smTimelineEvents <scimeth.data.smTimelineEvent>` may not be associated to
+any :class:`smTimelineConditions <scimeth.data.smTimelineCondition>`.
+
+:class:`smTimelineConditions <scimeth.data.smTimelineCondition>` can be
+allowed or not to be overalapping, even itself. That is, their associated
+:class:`smTimelineEvents <scimeth.data.smTimelineEvent>` can
+overlap or not the :class:`smTimelineEvents <scimeth.data.smTimelineEvent>`
+of the other :class:`smTimelineConditions <scimeth.data.smTimelineCondition>`.
+
+
+:class:`smTimeline <scimeth.data.smTimeline>` are
+:class:`smIdentifiable <scimeth.data.smIdentifiable>`.
+
+
+
+
+:Log:
+
++-------------+--------+------------------------------------------------------+
+| Date        | Author | Description                                          |
++=============+========+======================================================+
+| 24-Mar-2020 | FOE    | - Class created but unfinished.                      |
++-------------+--------+------------------------------------------------------+
+| 28-Mar-2020 | FOE    | - Continued with initial class implementation but    |
+|             |        |   still unfinished.                                  |
++-------------+--------+------------------------------------------------------+
+| 28-Mar-2020 | FOE    | - Continued with initial class implementation but    |
+|             |        |   still unfinished.                                  |
+|             |        | - Added methods :meth:sortTimelineEventsById and     |
+|             |        |   :meth:sortTimelineEventsByOnset                    |
++-------------+--------+------------------------------------------------------+
+
+
+.. seealso::
+	
+	:class:`smTimelineEvent <scimeth.data.smTimelineEvent>`,
+	:class:`smTimelineCondition <scimeth.data.smTimelineCondition>`
+
+.. sectionauthor:: Felipe Orihuela-Espina <f.orihuela-espina@inaoep.mx>
+.. codeauthor:: Felipe Orihuela-Espina <f.orihuela-espina@inaoep.mx>
+
+"""
+
+
+## Import
+import warnings
+#import deprecation
+
+#import os
+
+import numpy as np
+
+from interface import implements
+import datetime
+
+
+#from scimeth import __version__
+#from scimeth import data as scimeth
+from scimeth.utils import partition, quick_sort
+from .smIdentifiable import smIdentifiable
+from .smMeasurementUnit import smMeasurementUnit
+from .smTimelineEvent import smTimelineEvent
+from .smTimelineCondition import smTimelineCondition
+
+
+
+
+## Class definition
+class smTimeline(implements(smIdentifiable)):
+	#Sphinx documentation
+	"""A :class:`smTimeline <scimeth.data.smTimeline>` records experimental
+	and non-expeirmental events that can be associated in groups called
+	conditions.
+
+	:class:`smTimeline <scimeth.data.smTimeline>` are :class:`smIdentifiable <scimeth.data.smIdentifiable>`.
+	
+	:class:`smTimelineEvents <scimeth.data.smTimelineEvents>` are
+	internally expressed in :attr:`unit`, whether 'Sample' or 'Second'.
+	The :attr:`unit` can be set during object construction, or changed
+	later using :meth:`toSeconds` and :meth:`toSamples`.
+	
+	The relation between the samples and :attr:`timestamps` is controlled
+	by the relation between the :attr:`length`, :attr:`duration`,
+	:attr:`samplingRate` and :attr:`timeMultiplier` as follows;
+	
+	* ***Non-uniformly sampled timelines***: The timeline is
+	  considered to represent a non-equispaced sampling process
+	  e.g. asynchronous.
+	  
+	  * The :attr:`samplingRate` is either negative or 0.
+	  * No specific relation is expected between :attr:`length` and
+	    :attr:`duration`.
+	  * :attr:`timestamps` are positive or zero and sorted, but
+	    otherwise, they do not follow any specific timing rule.
+	    They are however equal in number to :attr:`length` and
+	    smaller or equal to :attr:`duration`.
+	  
+	* ***Uniformly sampled timelines***: The timeline is considered to
+	  represent an equispaced sampling process e.g. synchronous.
+	  
+	  * The :attr:`samplingRate` is strictly positive.
+	  * :attr:`length`,:attr:`duration` and :attr:`samplingRate`
+	    are related by:
+	    
+	    * :attr:`length` / :attr:`samplingRate` = :attr:`duration` * 10^:attr:`timeMultiplier` [seconds]
+	    * A rounding error smaller than 1/(2*:attr:`samplingRate`) is
+	      tolerated.
+	    
+	  * :attr:`timestamps` are positive or zero and sorted, and
+	    follow the timing rule set by the :attr:`samplingRate`.
+	    They are equal in number to :attr:`length` and
+	    smaller or equal to :attr:`duration`.
+	  
+	  
+	
+	:Class invariants:
+	
+	* All :class:`smTimelineEvents <scimeth.data.smTimelineEvent>` and
+	  :class:`smTimelineConditions <scimeth.data.smTimelineCondition>`
+	  in a :class:`smTimeline <scimeth.data.smTimeline>` must have different IDs.
+	* :class:`smTimelineEvents <scimeth.data.smTimelineEvent>` cannot last beyond
+	  the duration of the Timeline.
+	* The number of :attr:`timestamps` is equal to :attr:`length` i.e.
+	  `len(timestamps) == length`
+	* :attr:`timestamps` are between 0 and :attr:`duration`, both included.
+	* :attr:`timestamps` are sorted.
+	* If :attr:`samplingRate` is strictly positive, then timestamps
+	  follow the corresponding timing `1/samplingRate`.
+	* :attr:`timestamps` follow a strict order, i.e.
+	  `timestamps[i]<timestamps[i+1]`.
+	  
+	
+	"""
+
+    #Private class attributes shared by all instances
+	
+	#Support for the smIdentifiable interface
+	__nextID = 0 #A static member variable to keep track of the next
+			   #available identifier to use. Note that this
+			   #initialization is useless. Each instance, upon
+			   #creation, will increment this value.
+
+
+	#Class constructor
+	def __init__(self, initTime = datetime.datetime.now(),
+						unit = 'Sample',
+						length = 100,
+						samplingRate = 1,
+						duration = 100,
+						timeMultiplier = 0):
+		'''
+		Class constructor. Creates a new instance of
+		:class:`smTimeline <scimeth.data.smTimeline>`
+		
+		By default, the :class:`smTimeline <scimeth.data.smTimeline>` instance
+		has no associated events or conditions.
+		
+		:Parameters:
+		
+		initTime : :class:`datetime.datetime`, optional
+			Absolute initial time. The default is :meth:`datetime.datetime.now()`.
+		unit : str, optional
+			Temporal units in which the :class:`smTimelineEvents <scimeth.data.smTimelineEvents>`
+			are expressed. Either 'Sample' or 'Second'. The default is 'Sample'.
+		length : int, optional
+			Length of the timeline in samples. The default is 100.
+		samplingRate : float, optional
+			Sampling rate in Hz. The default is 1 Hz.
+		duration : float, optional
+			Duration of the timeline in seconds (scaled by timeMultiplier).
+			The default is 100.
+		timeMultiplier : float, optional
+			Multiplier for timestamps [second] units in base 10.
+			The default is 0 for full seconds (10^0).
+
+		:Returns:
+		
+		None.
+
+		'''
+		#Call superclass constructor
+		
+		
+		#Check consistency of length, duration and sampling rate
+		if samplingRate <= 0:
+			#Non-uniformly sampled
+			pass
+		else:
+			#Uniformly sampled
+			assert(length / samplingRate > ((duration * 10**timeMultiplier) - (1/2*samplingRate)) \
+			   and length / samplingRate < ((duration * 10**timeMultiplier) + (1/2*samplingRate)))
+		
+		#Support for the smIdentifiable interface
+		smTimeline.__nextID = smTimeline.__nextID+1
+		self.__id = smTimeline.__nextID
+		
+		self.initTime = initTime #Absolute initial time.
+		self.unit = unit #Temporal measurement unit.
+
+		self.timeMultiplier = timeMultiplier #Time multiplier. By default, in seconds (10^1).
+		self.length = length #Length in samples of the timeline
+		self.duration = duration #Duration of the timeline in seconds * 10^timeMultiplier
+		self.samplingRate = samplingRate #Sampling rate in [Hz]
+		
+		self.theConditions = None #List of conditions
+		self.theEvents = None #List of events
+		self.conditionEventsMap = None #Pairing between conditions and events
+		self.overlappingStatus = None #Pairwise conditions overlapping status
+
+		self.timestamps = np.arange(0, self.length -1, 1/self.samplingRate, \
+								dtype=None) #Timestamps in [seconds] (scaled by timestampsMultiplier)
+		
+		
+		
+		
+		return
+
+	#Properties getters/setters
+	#
+	# Remember: Sphinx ignores docstrings on property setters so all
+	#documentation for a property must be on the @property method
+
+	@property
+	def id(self): #ID getter
+		"""
+		A unique numerical ID for the object instance. It makes
+		:class:`smTimeline <scimeth.data.smTimeline>` to be
+		:class:`smIdentifiable <scimeth.data.smIdentifiable>`.
+		
+		:getter: Gets the id.
+		:type: int
+		"""
+		return self.__id
+
+
+	#Note that python does not have constants nor static constants,
+	#so in order to have a constant, a new property is defined
+	#with only a getter method and no setter.
+	@property
+	def OVERLAP(self): #OVERLAP getter
+		"""
+		Constant OVERLAP = True		
+		Permits overlapping behaviour among conditions.
+		
+		:getter: Gets constant OVERLAP.
+		:type: bool
+		"""
+		return True
+	
+	@property
+	def NON_OVERLAP(self): #NON_OVERLAP getter
+		"""
+		Constant NON_OVERLAP = False		
+		Forbids overlapping behaviour among conditions.
+		
+		:getter: Gets constant NON_OVERLAP.
+		:type: bool
+		"""
+		return False
+	
+	
+
+	@property
+	def duration(self): #duration getter
+		"""
+		Duration of the :class:`smTimeline <scimeth.data.smTimeline>`
+		in [seconds * 10^:attr:`timeMultipler`].
+		If :attr:`samplingRate` is strictly positive, then the 
+		:class:`smTimeline <scimeth.data.smTimeline>` is uniformly sampled
+		and :attr:`length`,:attr:`duration` and :attr:`samplingRate`
+		are related by:
+		
+		* :attr:`length` / :attr:`samplingRate` = :attr:`duration` * 10^:attr:`timeMultiplier` [seconds]
+		
+		with a rounding error smaller than 1/(2*:attr:`samplingRate`).
+		
+		***Note***: Changing the :attr:`duration` in uniformly sampled
+		timelines (i.e. :attr:`samplingRate` is strictly positive) may
+		affect the :attr:`length` and :attr:`timestamps`. If :attr:`length`
+		is altered, then timestamps beyond the `newDuration` are eliminated or
+		new equispaced timestamps are added if needed. In non-uniformly
+		sampled timelines, (i.e. :attr:`samplingRate` negative or zero),
+		:attr:`length` won't be altered, but :attr:`timestamps` may
+		still be adjusted to avoid those above the `newDuration`.
+		
+		***Note***: Changing the :attr:`duration` may affect the associated
+		events :attr:`theEvents`. Events with onsets beyond the newDuration
+		will be removed. Events lasting beyond the newDuration will be
+		cropped.
+		
+		
+		:getter: Gets the duration.
+		:setter: Sets the duration.
+		:type: flaot
+		"""
+		return self.__duration
+
+	@duration.setter
+	def duration(self,newDuration): #duration setter
+		if self.__duration is None: #Initialize if necessary
+			self.__duration = 0
+		if (type(newDuration) is int and newDuration>=0):
+			if self.samplingRate <= 0: #Non-uniformly space
+				self.__duration = newDuration
+				#Amend timestamps if necessary
+				#Generate the worst possible duration for each timestamps 
+				latestTimestamps = newDuration * np.ones(len(self.timestamps)) \
+					- np.flip(np.spacing(1) * np.arange(0,len(self.timestamps),1))
+				#Find timestamps beyond their latest possible values
+				idx = np.argwhere(self.timestamps > latestTimestamps);
+				#Substitute the offending timestamps
+				self.timestamps[idx] = latestTimestamps[idx]
+						
+
+			else: #Uniformly space
+				#Check whether the length is affected
+				if (((self.length / self.samplingRate) < (self.__duration - (1/(2*self.samplingRate)))) \
+				 or ((self.length / self.samplingRate) > (self.__duration + (1/(2*self.samplingRate))))):
+					#Update the duration and the length
+					self.__duration = newDuration
+					self.__length = newDuration *  self.samplingRate
+						#This takes care of the timestamps
+				else:
+					#Simply update the duration
+					self.__duration = newDuration
+
+
+			#Finally, remove or crop events as needed.
+			if self.unit.name == 'Sample':
+				for ev in self.theEvents:
+					if ev.onset > self.length: #Remove
+						ev = None
+					if ev.end > self.__length: #Crop
+						ev.duration = self.__length - ev.onset
+			else: #Units in 'Second'
+				for ev in self.theEvents:
+					if ev.onset > self.duration: #Remove
+						ev = None
+					if ev.end > self.duration: #Crop
+						ev.duration = self.duration - ev.onset
+
+		else:
+			warnMsg = self.getClassName() + ':duration: Unexpected attribute type.'
+			warnings.warn(warnMsg,SyntaxWarning)
+		return None
+
+
+
+
+	@property
+	def initTime(self): #initTime getter
+		"""
+		:class:`smTimeline <scimeth.data.smTimeline>` init time.
+		
+		:getter: Gets the event onset.
+		:setter: Sets the event onset.
+		:type: :class:`datetime.datetime`
+		"""
+		return self.__initTime
+
+	@initTime.setter
+	def initTime(self,newInitTime): #initTime setter
+		if (type(newInitTime) is datetime):
+			self.__initTime = newInitTime
+		else:
+			warnMsg = self.getClassName() + ':initTime: Unexpected attribute type.'
+			warnings.warn(warnMsg,SyntaxWarning)
+		return None
+
+	@property
+	def length(self): #onset getter
+		"""
+		Length of the :class:`smTimeline <scimeth.data.smTimeline>`
+		in number of samples.
+		If :attr:`samplingRate` is strictly positive, then the 
+		:class:`smTimeline <scimeth.data.smTimeline>` is uniformly sampled
+		and :attr:`length`,:attr:`duration` and :attr:`samplingRate`
+		are related by:
+		
+		* :attr:`length` / :attr:`samplingRate` = :attr:`duration` * 10^:attr:`timeMultiplier` [seconds]
+		
+		with a rounding error smaller than 1/(2*:attr:`samplingRate`).
+		
+		***Note***: Changing the :attr:`length` affects the :attr:`timestamps`.
+		It does eliminate timestamps beyond the `newLength` or add new
+		equispaced timestamps if needed.
+		
+		***Note***: Changing the :attr:`length` may affect the :attr:`duration`.
+		If :attr:`samplingRate` is strictly positive, the :attr:`duration`
+		will be set accordingly.
+		
+		***Note***: Changing the :attr:`length` may affect the associated
+		events :attr:`theEvents`. Events with onsets beyond the newLength
+		will be removed. Events lasting beyond the newLength will be
+		cropped.
+		
+		
+		
+		
+		:getter: Gets the length.
+		:setter: Sets the length.
+		:type: int
+		"""
+		return self.__length
+
+	@length.setter
+	def length(self,newLength): #length setter
+		if self.__length is None: #Initialize if necessary
+			self.__length = 0
+		if (type(newLength) is int and newLength>=0):
+			if self.samplingRate <= 0: #Non-uniformly space
+				#Enlarge or shrink the timestamps
+				if self.__length < newLength:
+					#Add more timespaces as needed
+					numNewElem = newLength - self.__length
+					self.__timestamps = np.resize(self.__timestamps,newLength)
+					self.__timestamps[self.__length:] = \
+						self.__timestamps[self.__length:] + \
+						np.arange(0, numNewElem - 1, (1/self.samplingRate), \
+								dtype=None) #Timestamps in [seconds] (scaled by timestampsMultiplier)
+				else:
+					#Remove the last timestamps
+					self.timestamps = self.timestamps[:newLength]
+				self.__length = newLength
+
+			else: #Uniformly space
+				#Reset the timestamps
+				self.__timestamps = np.arange(0, newLength -1, \
+								(10**self.timestampsMultiplier), \
+								dtype=None) #Timestamps in [seconds] (scaled by timestampsMultiplier)
+				self.__length = newLength
+				#and adjust the duration
+				self.__duration = (self.__length / self.samplingRate) * 10**self.unitMultiplier
+
+			#Finally, remove or crop events as needed.
+			if self.unit.name == 'Sample':
+				for ev in self.theEvents:
+					if ev.onset > self.length: #Remove
+						ev = None
+					if ev.end > self.__length: #Crop
+						ev.duration = self.__length - ev.onset
+			else: #Units in 'Second'
+				for ev in self.theEvents:
+					if ev.onset > self.duration: #Remove
+						ev = None
+					if ev.end > self.duration: #Crop
+						ev.duration = self.duration - ev.onset
+
+		else:
+			warnMsg = self.getClassName() + ':length: Unexpected attribute type.'
+			warnings.warn(warnMsg,SyntaxWarning)
+		return None
+
+
+	@property
+	def samplingRate(self): #samplingRate getter
+		"""
+		Sampling rate in[Hertz] at which samples are acquired.
+		If :attr:`samplingRate` is strictly positive, then the
+		:class:`smTimeline <scimeth.data.smTimeline>` is considered
+		to be uniformly sampled and :attr:`samplingRate` controls
+		the relation between :attr:`length` and :attr:`duration`, and
+		further :attr:`timestamps` are equally spaced at `1/samplingRate`.
+		If :attr:`samplingRate` is negative or 0, then the
+		:class:`smTimeline <scimeth.data.smTimeline>` is considered
+		to be non-uniformly sampled, and :attr:`length` and :attr:`duration`
+		are unrelated and :attr:`timestamps` are only guaranteed to be
+		below :attr:`duration`.
+		
+		* ***NOTE***: Altering the sampling rate in uniformly sampled
+		  mode (i.e. :attr:`samplingRate` strictly positive) may affect
+		  the :attr:`length` and/or the :attr:`duration`, and
+		  in turn this may affect the :attr:`timestamps` and :attr:`theEvents`.
+		
+		:Parameters:
+		
+		newSamplingRate: float
+			The new sampling rate
+		flagKeepLength: bool
+			In case of affecting :attr:`length` or :attr:`duration`,
+			this flag indicates which one should be preserved. The
+			default value is True for maintainging :attr:`length` and
+			modifying :attr:`duration`.
+		
+		:getter: Gets the sampling rate in [Hz].
+		:setter: Sets the sampling rate in [Hz].
+		:type: float
+		"""
+		return self.__samplingRate
+
+	@samplingRate.setter
+	def samplingRate(self,newSamplingRate, flagKeepLength = True): #onset setter
+		if type(newSamplingRate) is float:
+			if newSamplingRate>=0: #Uniformly spaced
+				self.__samplingRate = newSamplingRate
+				
+				if (((self.length / self.samplingRate) < (self.__duration - (1/(2*self.samplingRate)))) \
+				 or ((self.length / self.samplingRate) > (self.__duration + (1/(2*self.samplingRate))))):
+					#Affect length or duration
+					if flagKeepLength is True:
+						#Maintain length and alter duration
+						self.duration = self.length / newSamplingRate
+					else:
+						#Maintain duration and alter length
+						self.length = self.duration * newSamplingRate
+						
+				else:
+					#Nothing changes
+					pass
+				
+			else: #Non-unformly spaced
+				self.__samplingRate = newSamplingRate
+		else:
+			warnMsg = self.getClassName() + ':samplingRate: Unexpected attribute type.'
+			warnings.warn(warnMsg,SyntaxWarning)
+		return None
+
+
+
+
+	@property
+	def timeMultiplier(self): #onset getter
+		"""
+		Time multiplier in base 10 in which the :attr:`duration` and
+		:attr:`timestamps` are expressed. Changing the :attr:`timeMultiplier`
+		automatically updates the :attr:`duration` and
+		:attr:`timestamps`.
+		
+		Note that :attr:`theEvents` are expressed in :attr:`unit`.
+		
+		:getter: Gets the timeMultiplier.
+		:setter: Sets the timeMultiplier.
+		:type: float
+		"""
+		return self.__timeMultiplier
+
+	@timeMultiplier.setter
+	def timeMultiplier(self,newMultiplier): #timeMultiplier setter
+		if self.__timeMultiplier is None: #Initialize if necessary
+			self.__timeMultiplier = 0
+		if (type(newMultiplier) is float and newMultiplier>=0):
+			#Adjust duration and timestamps
+			currMultiplier = self.__timeMultiplier
+			self.__duration = self.__duration * 10**(newMultiplier-currMultiplier)
+			self.timestamps = self.timestamps * 10**(newMultiplier-currMultiplier)
+			#...and set the new timeMultiplier
+			self.__timeMultiplier = newMultiplier
+		else:
+			warnMsg = self.getClassName() + ':timeMultiplier: Unexpected attribute type.'
+			warnings.warn(warnMsg,SyntaxWarning)
+		return None
+
+	@property
+	def unit(self): #unit getter
+		"""
+		:class:`smMeasurementUnit <scimeth.data.smMeasurementUnit>` in
+		which the :attr:`onset` and
+		:attr:`duration` are expressed.
+
+		Unit can only be either seconds (with a multiplier) or samples.
+		Note that there is no setter method for attr:`unit`. Instead,
+		the user can used :meth:`toSeconds` and :meth:`toSamples`
+		to change the attr:`unit`.
+		
+		:getter: Gets the time measurement unit.
+		:type: :class:`smMeasurementUnit <scimeth.data.smMeasurementUnit>`
+		"""
+		return self.__unit
+
+
+	#Private methods
+
+	
+	#Public methods
+	def getClassName(self):
+		'''Returns the class name
+		'''
+		return type(self).__name__
+	
+
+	def __str__(self):
+		'''Provides a string representation for the objects of the class.
+		'''
+		s = '<' + self.getClassName() + ': {'
+		#Grab Class attributes (note that this will only pick class attributes
+		#but not instance attributes)
+		#The filter ignores python __ attributes e.g. __repr__
+		iters = dict((name,value) for name,value in self.__dict__.items() if name[:2] != '__')
+		#Update with the instance items
+		iters.update(self.__dict__)
+		#Finally build the string
+		for name,value in iters.items():
+			s = s + name[len(self.getClassName())+3:] + '=' + str(value) + '; '
+		return s + '}>'
+
+
+	@staticmethod
+	def sortTimelineEventsById(theEvents):
+		'''
+		Sort a list of :class:`smTimelineEvents <scimeth.data.smTimelineEvents>`
+		by id (Note that id is unique.)
+		
+		:Example:
+			
+			Let be the events A=(id=1, onset = 2, duration =3),
+			B=(id=2, onset = 1, duration =3),
+			C=(id=3, onset = 2, duration =2) and
+			D=(id=4, onset = 2, duration =3)
+			
+			Then, the order is A<B<C<D.
+
+		:Parameters:
+
+		theEvents : List of :class:`smTimelineEvents <scimeth.data.smTimelineEvents>`
+			The list of :class:`smTimelineEvents <scimeth.data.smTimelineEvents>` to be sorted.
+
+		:Returns:
+
+		The sorted list of :class:`smTimelineEvents <scimeth.data.smTimelineEvents>`.
+
+		'''
+		#Sort in inverse order, first by id, then by duration and finally
+		#by onset
+		return quick_sort(theEvents, 0, len(theEvents) - 1, lambda x, y: x.id < y.id)
+
+	def sortTimelineEventsByOnset(theEvents):
+		'''
+		Sort a list of :class:`smTimelineEvents <scimeth.data.smTimelineEvents>`
+		first by onset and later by duration. Events with the same onset and
+		duration are further ordered by id (Note that id is unique.)
+		
+		:Example:
+			
+			Let be the events A=(id=1, onset = 2, duration =3),
+			B=(id=2, onset = 1, duration =3),
+			C=(id=3, onset = 2, duration =2) and
+			D=(id=4, onset = 2, duration =3)
+			
+			Then, the order is B<C<A<D.
+
+		:Parameters:
+
+		theEvents : List of :class:`smTimelineEvents <scimeth.data.smTimelineEvents>`
+			The list of :class:`smTimelineEvents <scimeth.data.smTimelineEvents>` to be sorted.
+
+		:Returns:
+
+		The sorted list of :class:`smTimelineEvents <scimeth.data.smTimelineEvents>`.
+
+		'''
+		#Sort in inverse order, first by id, then by duration and finally
+		#by onset
+		theEvents = quick_sort(theEvents, 0, len(theEvents) - 1, lambda x, y: x.id < y.id)
+		theEvents = quick_sort(theEvents, 0, len(theEvents) - 1, lambda x, y: x.duration < y.duration)
+		return quick_sort(theEvents, 0, len(theEvents) - 1, lambda x, y: x.onset < y.onset)
+
+	def isEqual(self,obj2):
+		'''
+		Compares whether a second object is of the same type and have the
+		same values in its properties.
+		
+		Note that this is different from:
+		
+		 * obj1 == obj2: This checks whether the objects have the same content.
+		 * obj1 is obj2: This checks that both objects are referring to the
+		   same instance.
+
+
+		:Parameters:
+
+		obj2 : :class:`smTimelineEvent <scimeth.data.smTimelineEvent>`
+			Object to be compared with.
+
+		:Returns:
+
+		Boolean. True if both objects have the same information.
+		False otherwise.
+
+		'''
+		res = True
+		res = res & (type(self) == type(obj2))
+		if not res:
+			return res
+		
+
+		res = res & (self.id == obj2.id)
+		res = res & (self.length == obj2.length)
+		res = res & (self.samplingRate == obj2.samplingRate)
+		res = res & (self.unit.isEqual(obj2.unit))
+		
+		res = res & (self.initTime == obj2.initTime).all
+		res = res & (self.timestamps == obj2.timestamps).all
+		res = res & (self.overlappingStatus == obj2.overlappingStatus).all
+
+		res = res & (self.theConditions == obj2.theConditions)
+		res = res & (self.theEvents == obj2.theEvents)
+
+		res = res & (self.conditionEventsMap == obj2.conditionEventsMap )
+		
+		return res
+
+
+
+	def toSeconds(self,samplingRate = 1, newMultiplier = 0):
+		'''
+		Choose Second as the time unit in which
+		the :attr:`onset` and :attr:`duration` are expressed.
+		
+		:Parameters:
+
+		samplingRate : float, optional.
+			Sampling rate in [Hz]. The default is 1 Hz.
+			Value must be equal or greater than 0 Hz. Otherwise, the
+			conversion to Second is not executed, a warning
+			is issued and the method returns -1.
+		newMultplier : int
+			Seconds multiplier, e.g. -3 for milliseconds. The default is
+			0 i.e. (full) seconds.
+
+		:Returns:
+
+		int. 0 if no error was found, or -1 otherwise.
+
+		'''
+		if samplingRate <= 0:
+			warnMsg = self.getClassName() + ':toSamples: Sampling rate must be equal or greater than 0 Hz.'
+			warnings.warn(warnMsg,SyntaxWarning)
+			return -1
+		else:
+			currUnit = self.unit.name
+			currMultiplier = self.unit.multiplier
+			self.__unit = smMeasurementUnit(name='Second',acronym='s', \
+									    multiplier=newMultiplier,isIS=True)
+			#and update the onset and duration from samples.
+			if currUnit == 'Second':
+				#Adjust the timestamps if needed
+				if currMultiplier != newMultiplier:
+					self.timestamps = self.timestamps * ((10^currMultiplier)/(10^newMultiplier))
+			else:
+				for ev in self.theEvents:
+					ev.toSeconds(samplingRate,newMultiplier)
+		return 0
+		
+
+	def toSamples(self,samplingRate = 1):
+		'''
+		Choose Sample as the time unit in which
+		the :attr:`onset` and :attr:`duration` are expressed.
+		
+		:Parameters:
+		
+		samplingRate : float, optional.
+			Sampling rate in [Hz]. The default is 1 Hz.
+			Value must be equal or greater than 0 Hz. Otherwise, the
+			conversion to Sample is not executed, a warning
+			is issued and the method returns -1.
+		
+		:Returns:
+		
+		int. 0 if no error was found, or -1 otherwise.
+
+		'''
+		if samplingRate <= 0:
+			warnMsg = self.getClassName() + ':toSamples: Sampling rate must be equal or greater than 0 Hz.'
+			warnings.warn(warnMsg,SyntaxWarning)
+			return -1
+		else:
+			currUnit = self.unit.name
+			#currMultiplier = self.unit.multiplier
+			self.__unit = smMeasurementUnit(name='Sample',acronym='samples',
+									    multiplier=1,isIS=False)
+			#and update the onset and duration from seconds.
+			if currUnit == 'Sample':
+				pass
+			else:
+				for ev in self.theEvents:
+					ev.toSamples(samplingRate)
+		return 0
+
+	
+	
